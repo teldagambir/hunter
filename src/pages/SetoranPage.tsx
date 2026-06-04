@@ -1,10 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from "react";
 import { allPackages } from "../data/packages";
-import { ChevronLeft, ChevronRight, Check, Camera, MapPin, Loader2, User, FileText, CreditCard, Package, Image as ImageIcon, ImagePlus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Check, Camera, MapPin, Loader2, User, FileText, CreditCard, Package, Image as ImageIcon, ImagePlus, ExternalLink, ClipboardCopy } from "lucide-react";
 import { MapContainer, Marker, TileLayer, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+
+const OFFICIAL_SETORAN_URL = import.meta.env.VITE_SETORAN_FORM_URL || "https://bit.ly/indibizteknisi";
 
 type Step = "teknisi" | "ktp" | "alamat" | "npwp" | "kategori-paket" | "paket" | "foto" | "review";
 
@@ -16,7 +18,7 @@ const stepMeta: Array<{ key: Step; label: string; icon: any }> = [
   { key: "kategori-paket", label: "Kategori Paket", icon: Package },
   { key: "paket", label: "Pilih Paket", icon: Package },
   { key: "foto", label: "Dokumentasi", icon: ImageIcon },
-  { key: "review", label: "Review & Kirim", icon: Check },
+  { key: "review", label: "Review & Form Resmi", icon: Check },
 ];
 
 const PACKAGE_CATEGORIES = [
@@ -258,6 +260,7 @@ export default function SetoranPage() {
 
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedPackage, setSelectedPackage] = useState("");
+  const [handoffNote, setHandoffNote] = useState<string | null>(null);
 
   const categoryPackages = allPackages.filter((p) => {
     if (!selectedCategory) return false;
@@ -378,10 +381,34 @@ export default function SetoranPage() {
     }
   };
 
-  const handleSubmit = () => {
-    const payload = { ...form, package: selectedPackage, category: selectedCategory, timestamp: new Date().toISOString() };
-    console.log("SUBMIT (draft payload):", payload);
-    alert("Draft siap. Integrasi ke form tujuan masih perlu mapping field Google Form yang asli.");
+  const buildHandoffSummary = () => {
+    const lines = [
+      `Teknisi: ${form.nikTeknisi || "-"} / ${form.namaTeknisi || "-"}`,
+      `PIC: ${form.ktp_nama || "-"}`,
+      `Alamat KTP: ${form.ktp_alamat || "-"}`,
+      `Alamat pemasangan: ${form.alamat_pemasangan || "-"}`,
+      `Kategori: ${selectedCategory || "-"}`,
+      `Paket: ${allPackages.find((p) => p.id === selectedPackage)?.namaPaket || selectedPackage || "-"}`,
+      `NPWP: ${form.npwp_npwp || "-"}`,
+      `Waktu: ${new Date().toLocaleString("id-ID")}`,
+    ];
+    return lines.join("\n");
+  };
+
+  const handoffToOfficialForm = async () => {
+    const summary = buildHandoffSummary();
+    setHandoffNote("Ringkasan data siap. Membuka form resmi Indibiz...");
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(summary);
+        setHandoffNote("Ringkasan data disalin. Lanjut isi/cek di form resmi Indibiz.");
+      }
+    } catch {
+      setHandoffNote("Membuka form resmi Indibiz...");
+    }
+
+    window.open(OFFICIAL_SETORAN_URL, "_blank", "noopener,noreferrer");
   };
 
   const canGoNext = () => {
@@ -403,6 +430,48 @@ export default function SetoranPage() {
       <div className="h-1.5 bg-gray-100 rounded-full mb-4 overflow-hidden">
         <div className="h-full bg-telkom-red rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
       </div>
+
+      <div className="card-soft p-4 mb-4 bg-gradient-to-br from-red-50 to-white border border-red-100">
+        <div className="flex items-start gap-3">
+          <div className="h-11 w-11 shrink-0 rounded-2xl bg-telkom-red text-white flex items-center justify-center shadow-sm">
+            <ExternalLink size={20} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-black text-telkom-dark">Form resmi Setoran</p>
+            <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+              Setoran ini berfungsi sebagai front-end pendamping. Data disusun di sini dulu, lalu lanjut ke form resmi Indibiz.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                onClick={handoffToOfficialForm}
+                className="inline-flex items-center gap-2 rounded-2xl bg-telkom-red px-4 py-2.5 text-xs font-bold text-white active:scale-[0.98]"
+              >
+                <ExternalLink size={14} /> Buka form resmi
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(buildHandoffSummary());
+                    setHandoffNote("Ringkasan data disalin ke clipboard.");
+                  } catch {
+                    setHandoffNote("Gagal menyalin ringkasan. Coba lagi atau salin manual.");
+                  }
+                }}
+                className="inline-flex items-center gap-2 rounded-2xl bg-white border border-gray-200 px-4 py-2.5 text-xs font-bold text-telkom-dark active:scale-[0.98]"
+              >
+                <ClipboardCopy size={14} /> Salin ringkasan
+              </button>
+            </div>
+            <p className="mt-2 text-[11px] text-gray-500 break-all">{OFFICIAL_SETORAN_URL}</p>
+          </div>
+        </div>
+      </div>
+
+      {handoffNote && (
+        <div className="mb-4 rounded-2xl bg-emerald-50 border border-emerald-100 px-4 py-3 text-xs text-emerald-800">
+          {handoffNote}
+        </div>
+      )}
 
       <div className="flex items-center gap-2 mb-5">
         {stepIndex > 0 && (
@@ -670,9 +739,12 @@ export default function SetoranPage() {
 
         {/* Other steps */}
         {step !== "ktp" && step !== "npwp" && step !== "alamat" && step !== "foto" && (
-          <button onClick={goNext} disabled={!canGoNext()}
-            className="flex-1 bg-telkom-red text-white font-bold rounded-2xl py-4 text-sm flex items-center justify-center gap-2 disabled:opacity-40 active:scale-[0.98]">
-            {step === "review" ? <span onClick={handleSubmit}>Kirim Data</span> : <>Lanjut <ChevronRight size={18} /></>}
+          <button
+            onClick={step === "review" ? handoffToOfficialForm : goNext}
+            disabled={!canGoNext()}
+            className="flex-1 bg-telkom-red text-white font-bold rounded-2xl py-4 text-sm flex items-center justify-center gap-2 disabled:opacity-40 active:scale-[0.98]"
+          >
+            {step === "review" ? <>Buka Form Resmi <ExternalLink size={18} /></> : <>Lanjut <ChevronRight size={18} /></>}
           </button>
         )}
         {step === "alamat" && (
